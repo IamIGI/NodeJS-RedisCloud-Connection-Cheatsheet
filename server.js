@@ -7,15 +7,23 @@ const Redis = require('redis');
 
 
 
-//-------------Redis connection
+//-------------Redis config
+// const redisClient = Redis.createClient({
+//     //When commented data will be saved on local Redis instance (there should be much faster response)
+//     url: process.env.REDIS_URL,
+//     password: process.env.REDIS_PASSWORD,
+//     legacyMode: true            //Need this 1 -this is connected
+// });
+
 const redisClient = Redis.createClient({
-    url: process.env.REDIS_URL,
-    password: process.env.REDIS_PASSWORD
+    legacyMode: true
 });
 
 redisClient.on('error', err => {
     console.log( err);
 });
+
+redisClient.connect();          //Need this 2  - this is connected
 
 
 //----------server config
@@ -26,22 +34,25 @@ LAN_PORT = 3000;
 
 //----------website config
 app.get('/photos', async( req, res) => {
-    
+
     const albumId = req.query.albumId;
-    const { data } = await axios.get(
-        'https://jsonplaceholder.typicode.com/photos',
-        { params: { albumId }}
-        )
 
-
-    //-----redis save data
-    await redisClient.connect();
-    await redisClient.set('photos', 'costamcostam');
-    // await redisClient.set('photos', JSON.stringify(data));
-    const value = await redisClient.get('photos')
-    console.log(value);
-
-    res.json(data)
+    redisClient.get('photos', async (error, photos) => {
+        if(error) console.log(error)
+        if(photos != null) {
+            console.log('Cache hit');
+            return res.json(JSON.parse(photos));
+        }else {
+            console.log('Cache Miss');
+            const { data } = await axios.get(
+                'https://jsonplaceholder.typicode.com/photos',
+                { params: { albumId }}
+            )
+             //-----redis save data
+            redisClient.set('photos', JSON.stringify(data));
+            res.json(data)
+        }
+    })
 })
 
 app.get("/photos/:id", async(req, res) => {
@@ -54,7 +65,7 @@ app.get("/photos/:id", async(req, res) => {
 })
 
 
-//------------------SERVER CONFIG [ CLOSE CONNECTION ]----------------------
+//------------------SERVER CONFIG ----------------------
 let port = process.env.PORT; 
 if (port == null || port == ''){
     port = LAN_PORT;
